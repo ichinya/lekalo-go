@@ -1,0 +1,4 @@
+[
+  "crates/lekalo-cli/tests/package_adoption.rs",
+  "tests/fixtures/adopt/go-module"
+]
