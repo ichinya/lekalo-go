@@ -1,0 +1,114 @@
+
+	default:
+		lekFail("expression-unknown")
+	}
+	return row
+}
+
+func main() {
+	raw, err := io.ReadAll(os.Stdin)
+	if err != nil {
+		lekInputFail()
+	}
+	// Strict UTF-8: the original stdin bytes must be valid UTF-8, so
+	// a malformed sequence refuses the document at the boundary
+	// instead of being silently replaced with replacement-character
+	// binding data. A legal U+FFFD stays accepted.
+	if !utf8.Valid(raw) {
+		lekInputFail()
+	}
+	if !lekCanonicalDocumentText(raw) {
+		lekInputFail()
+	}
+	decoder := json.NewDecoder(strings.NewReader(string(raw)))
+	// Exact envelope member names: the document and every vector
+	// decode into exact-key maps, so a case variant (`Bindings`,
+	// `BINDINGS`, `Vectors`, `ID`, `EXPRESSION`) can never satisfy
+	// the required lowercase member's presence.
+	var members map[string]json.RawMessage
+	if err := decoder.Decode(&members); err != nil {
+		lekInputFail()
+	}
+	// Exactly one JSON document is consumed: only whitespace may
+	// follow it — any non-whitespace trailing byte or extra value
+	// refuses.
+	var extra json.RawMessage
+	if err := decoder.Decode(&extra); err != io.EOF {
+		lekInputFail()
+	}
+	vectorsRaw, ok := members["vectors"]
+	if !ok || string(vectorsRaw) == "null" {
+		lekInputFail()
+	}
+	var vectors []map[string]json.RawMessage
+	if err := json.Unmarshal(vectorsRaw, &vectors); err != nil {
+		lekInputFail()
+	}
+	results := make([]map[string]any, 0, len(vectors))
+	for _, vector := range vectors {
+		// The consumed id is echoed into the result row, so only a
+		// primitive string id can reach the envelope: an explicit null
+		// refuses here instead of unmarshalling into the empty string.
+		idRaw, ok := vector["id"]
+		if !ok || string(idRaw) == "null" {
+			lekInputFail()
+		}
+		var id string
+		if err := json.Unmarshal(idRaw, &id); err != nil {
+			lekInputFail()
+		}
+		// The selector is a primitive string too: an explicit null
+		// refuses here instead of unmarshalling into the empty string,
+		// and every other non-string spelling fails the unmarshal.
+		expressionRaw, ok := vector["expression"]
+		if !ok || string(expressionRaw) == "null" {
+			lekInputFail()
+		}
+		var expression string
+		if err := json.Unmarshal(expressionRaw, &expression); err != nil {
+			lekInputFail()
+		}
+		// The clock is a *string plus explicit presence: only an
+		// omitted clock reads the epoch default, while an explicit
+		// null or a non-string spelling refuses the document exactly
+		// like the reference decode.
+		var clock *string
+		if clockRaw, ok := vector["clock"]; ok {
+			if string(clockRaw) == "null" {
+				lekInputFail()
+			}
+			if err := json.Unmarshal(clockRaw, &clock); err != nil || clock == nil {
+				lekInputFail()
+			}
+		}
+		// Bindings roots are distinguished exactly: absent and null
+		// refuse the document like the reference decode; `{}` stays a
+		// valid root for a parameterless record and never computes
+		// from a nil map.
+		bindingsRaw, ok := vector["bindings"]
+		if !ok || string(bindingsRaw) == "null" {
+			lekInputFail()
+		}
+		var bindings map[string]any
+		bindingsDecoder := json.NewDecoder(strings.NewReader(string(bindingsRaw)))
+		bindingsDecoder.UseNumber()
+		if err := bindingsDecoder.Decode(&bindings); err != nil || bindings == nil {
+			lekInputFail()
+		}
+		env := map[string]any{
+			"clockText": clock,
+			"bindings":  bindings,
+		}
+		results = append(results, lekRun(expression, id, env))
+	}
+	encoded, err := json.Marshal(map[string]any{"results": results})
+	if err != nil {
+		lekInputFail()
+	}
+	fmt.Println(string(encoded))
+}
+
+func lekInputFail() {
+	fmt.Fprintln(os.Stderr, "lekalo vector input error")
+	os.Exit(1)
+}
