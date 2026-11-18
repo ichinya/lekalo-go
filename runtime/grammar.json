@@ -1,0 +1,13 @@
+{
+  "id": "lekalo-go",
+  "version": "0.2.0",
+  "grammars": [
+    {
+      "file": "tree-sitter-go.wasm",
+      "extensions": [
+        ".go"
+      ],
+      "declarations": "(function_declaration name: (identifier) @function)\n(method_declaration name: (field_identifier) @method)\n(type_spec name: (type_identifier) @type)"
+    }
+  ]
+}

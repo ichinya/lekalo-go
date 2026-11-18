@@ -1,0 +1,30 @@
+
+func lekRun(expression string, id string, env map[string]any) (row map[string]any) {
+	row = map[string]any{"id": id}
+	defer func() {
+		if r := recover(); r != nil {
+			token, ok := r.(string)
+			if !ok {
+				token = "runtime-error"
+			}
+			delete(row, "value")
+			row["error"] = token
+		}
+	}()
+	// A supplied clock validates eagerly, before the expression
+	// lookup, the bindings, and the body: an explicit null never
+	// reaches this point (the decode refuses it), and a malformed
+	// supplied clock refuses with the closed clock token even when
+	// the expression is unknown or the body never reads now — the
+	// same clock-first precedence as the reference decode.
+	if textPtr, ok := env["clockText"].(*string); ok && textPtr != nil {
+		if _, _, _, _, _, _, valid := lekClockFields(*textPtr); !valid {
+			lekFail("clock-invalid")
+		}
+	}
+	params, known := lekParams[expression]
+	if !known {
+		lekFail("expression-unknown")
+	}
+	lekValidateBindings(env, params)
+	switch expression {
